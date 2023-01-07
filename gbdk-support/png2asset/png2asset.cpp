@@ -23,6 +23,7 @@ enum {
 	SPR_16x16_MSX
 };
 
+int shared_color_index = -1;
 bool export_as_map = false;
 bool use_map_attributes = false;
 bool use_2x2_map_attributes = false;
@@ -275,6 +276,42 @@ bool FindTile(const Tile& t, size_t& idx, unsigned char& props)
 	return false;
 }
 
+unsigned char GetPalette(int x, int y) {
+
+	unsigned char image_data_color_idx = image.data[y * image.w + x];
+	unsigned char default_pal_idx = image_data_color_idx >> bpp; //We can pick the palette from the first pixel of this tile
+
+	unsigned char final_pal = default_pal_idx;
+
+	bool shared_color_valid = shared_color_index >= 0 && shared_color_index < colors_per_pal;
+	bool default_value_is_shared_color = image_data_color_idx % colors_per_pal == shared_color_index;
+
+	// If the feature is enabled (common color index is a valid value), and the default value is the shared color
+	if(shared_color_valid && default_value_is_shared_color) {
+
+		for(int j = 0; j < tile_h; ++j)
+		{
+			for(int i = 0; i < tile_w; ++i)
+			{
+				unsigned char ij_color_idx = image.data[(y + j) * image.w + (x + i)];
+
+				// If this is the shared color, continue on
+				if(ij_color_idx % colors_per_pal == shared_color_index)continue;
+
+				unsigned char pal_idx_ij = ij_color_idx >> bpp;
+
+				// If we haven't changed the final color paleette, and this isn't the default value
+				if(pal_idx_ij != default_pal_idx && final_pal == default_pal_idx) {
+					final_pal = pal_idx_ij;
+				}
+			}
+		}
+	}
+
+	return  final_pal;
+
+}
+
 void GetMetaSprite(int _x, int _y, int _w, int _h, int pivot_x, int pivot_y)
 {
 	int last_x = _x + pivot_x;
@@ -291,7 +328,8 @@ void GetMetaSprite(int _x, int _y, int _w, int _h, int pivot_x, int pivot_y)
 			{
 				size_t idx;
 				unsigned char props;
-				unsigned char pal_idx = image.data[y * image.w + x] >> 2; //We can pick the palette from the first pixel of this tile
+
+				unsigned char pal_idx = GetPalette(x, y);
 
 				if(keep_duplicate_tiles)
 				{
@@ -373,7 +411,8 @@ void GetMap()
 
 			if(use_map_attributes)
 			{
-				unsigned char pal_idx = image.data[y * image.w + x] >> bpp; //We can pick the palette from the first pixel of this tile
+
+				unsigned char pal_idx = GetPalette(x, y);
 				if(pack_mode == Tile::SGB)
 				{
 					props = props << 1; //Mirror flags in SGB are on bit 7
@@ -754,6 +793,7 @@ int main(int argc, char* argv[])
 		printf("-metasprites_only   export metasprite descriptors only\n");
 		printf("-source_tileset     use source tileset (image with common tiles)\n");
 		printf("-keep_duplicate_tiles   do not remove duplicate tiles (default: not enabled)\n");
+		printf("-shared_color_index search for the first non-zero color palette (default:false)");
 
 		printf("-bin                export to binary format\n");
 		printf("-transposed         export transposed (column-by-column instead of row-by-row)\n");
@@ -922,6 +962,10 @@ int main(int argc, char* argv[])
 		else if (!strcmp(argv[i], "-transposed"))
 		{
 			output_transposed = true;
+		}
+		else if(!strcmp(argv[i], "-shared_color_index"))
+		{
+		shared_color_index = atoi(argv[++i]);
 		}
 	}
 
